@@ -1,14 +1,22 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, admin, loading } = useAuth();
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("password123");
   const [error, setError] = useState("");
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && admin) {
+      router.push("/dashboard");
+    }
+  }, [admin, loading, router]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();

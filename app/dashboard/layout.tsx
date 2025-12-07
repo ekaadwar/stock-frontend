@@ -10,14 +10,16 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { admin, logout } = useAuth();
+  const { admin, logout, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!admin) {
+    if (!loading && !admin) {
       router.push("/login");
     }
   }, [admin, router]);
+
+  if (loading) return null;
 
   if (!admin) return null;
 
@@ -34,8 +36,10 @@ export default function DashboardLayout({
         <p>
           {admin.firstName} {admin.lastName}
         </p>
-        <nav style={{ marginTop: 16 }}>
-          <ul style={{ listStyle: "none", padding: 0 }}>
+        <nav style={{ marginTop: 24 }}>
+          <ul
+            style={{ listStyle: "none", padding: 0, display: "grid", gap: 8 }}
+          >
             <li>
               <Link href="/dashboard">Dashboard</Link>
             </li>
