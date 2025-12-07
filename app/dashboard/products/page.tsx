@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import { apiFetch } from "@/lib/api";
+import { Button } from "@/app/components/units/Button";
+import { ProductFormModalTemplate } from "@/app/components/templates/ProductFormModalTemplate";
+import { ConfirmDeleteModalTemplate } from "@/app/components/templates/ConfirmDeleteModalTemplate";
 
 type Category = {
   id: number;
@@ -11,147 +14,232 @@ type Category = {
 type Product = {
   id: number;
   name: string;
-  description?: string;
-  imageUrl?: string;
   stock: number;
-  category: Category;
+  description: string | null;
+  categoryId: number;
+  category?: Category;
 };
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [form, setForm] = useState({
-    name: "",
-    description: "",
-    imageUrl: "",
-    stock: 0,
-    categoryId: 0,
-  });
+  const [loading, setLoading] = useState(false);
 
-  const load = async () => {
-    const [prods, cats] = await Promise.all([
-      apiFetch("/products"),
-      apiFetch("/categories"),
-    ]);
-    setProducts(prods);
-    setCategories(cats);
-    if (cats.length && !form.categoryId) {
-      setForm((f) => ({ ...f, categoryId: cats[0].id }));
-    }
-  };
+  // form state
+  const [formOpen, setFormOpen] = useState(false);
+  const [formMode, setFormMode] = useState<"create" | "edit">("create");
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
+  const [name, setName] = useState("");
+  const [stock, setStock] = useState("0");
+  const [description, setDescription] = useState("");
+  const [categoryId, setCategoryId] = useState<number | null>(null);
+
+  // delete state
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
+
+  // load data
   useEffect(() => {
+    const load = async () => {
+      try {
+        setLoading(true);
+        const [cats, prods] = await Promise.all([
+          apiFetch("/categories"),
+          apiFetch("/products"),
+        ]);
+        setCategories(cats);
+        setProducts(prods);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     load();
   }, []);
 
-  const handleCreate = async () => {
-    await apiFetch("/products", {
-      method: "POST",
-      body: JSON.stringify({
-        ...form,
-        stock: Number(form.stock),
-        categoryId: Number(form.categoryId),
-      }),
-    });
-    setForm({
-      name: "",
-      description: "",
-      imageUrl: "",
-      stock: 0,
-      categoryId: categories[0]?.id || 0,
-    });
-    load();
+  const openCreateModal = () => {
+    setFormMode("create");
+    setSelectedProduct(null);
+    setName("");
+    setStock("0");
+    setDescription("");
+    setCategoryId(null);
+    setFormOpen(true);
   };
 
-  const handleDelete = async (id: number) => {
-    await apiFetch(`/products/${id}`, { method: "DELETE" });
-    load();
+  const openEditModal = (product: Product) => {
+    setFormMode("edit");
+    setSelectedProduct(product);
+    setName(product.name);
+    setStock(String(product.stock));
+    setDescription(product.description ?? "");
+    setCategoryId(product.categoryId);
+    setFormOpen(true);
+  };
+
+  const handleFormSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!name.trim() || !categoryId) return;
+
+    const payload = {
+      name,
+      stock: Number(stock),
+      categoryId,
+      description,
+    };
+
+    try {
+      if (formMode === "create") {
+        const created = await apiFetch("/products", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setProducts((prev) => [...prev, created]);
+      } else if (formMode === "edit" && selectedProduct) {
+        const updated = await apiFetch(`/products/${selectedProduct.id}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+        setProducts((prev) =>
+          prev.map((p) => (p.id === updated.id ? updated : p))
+        );
+      }
+      setFormOpen(false);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const openDeleteConfirm = (product: Product) => {
+    setDeleteProduct(product);
+    setDeleteOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteProduct) return;
+    try {
+      await apiFetch(`/products/${deleteProduct.id}`, {
+        method: "DELETE",
+      });
+      setProducts((prev) => prev.filter((p) => p.id !== deleteProduct.id));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDeleteOpen(false);
+    }
   };
 
   return (
-    <div>
-      <h1>Products</h1>
-
-      <h3 style={{ marginTop: 24 }}>Create Product</h3>
-      <div style={{ maxWidth: 500 }}>
-        <input
-          placeholder="Name"
-          style={{ width: "100%", marginBottom: 8 }}
-          value={form.name}
-          onChange={(e) => setForm({ ...form, name: e.target.value })}
-        />
-        <textarea
-          placeholder="Description"
-          style={{ width: "100%", marginBottom: 8 }}
-          value={form.description}
-          onChange={(e) => setForm({ ...form, description: e.target.value })}
-        />
-        <input
-          placeholder="Image URL"
-          style={{ width: "100%", marginBottom: 8 }}
-          value={form.imageUrl}
-          onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
-        />
-        <input
-          type="number"
-          placeholder="Stock"
-          style={{ width: "100%", marginBottom: 8 }}
-          value={form.stock}
-          onChange={(e) =>
-            setForm({
-              ...form,
-              stock: Number(e.target.value),
-            })
-          }
-        />
-        <select
-          style={{ width: "100%", marginBottom: 8 }}
-          value={form.categoryId}
-          onChange={(e) =>
-            setForm({
-              ...form,
-              categoryId: Number(e.target.value),
-            })
-          }
+    <div className="h-full w-full bg-[#0A0A0A] text-[#F0F0F0]">
+      {/* Top bar: Add Product */}
+      <div className="flex justify-end px-8 pt-4 pb-3">
+        <Button
+          type="button"
+          className="bg-[#666666] text-[#F0F0F0] hover:bg-[#777777]"
+          onClick={openCreateModal}
         >
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <button onClick={handleCreate}>Save</button>
+          Add Product
+        </Button>
       </div>
 
-      <h3 style={{ marginTop: 32 }}>List Products</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Nama</th>
-            <th>Stok</th>
-            <th>Kategori</th>
-            <th>Gambar</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {products.map((p) => (
-            <tr key={p.id}>
-              <td>{p.id}</td>
-              <td>{p.name}</td>
-              <td>{p.stock}</td>
-              <td>{p.category?.name}</td>
-              <td>
-                {p.imageUrl && <img src={p.imageUrl} alt={p.name} width={60} />}
-              </td>
-              <td>
-                <button onClick={() => handleDelete(p.id)}>Delete</button>
-              </td>
+      {/* Table */}
+      <div className="px-8">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="bg-[#666666] text-[#F0F0F0]">
+              <th className="px-4 py-2 text-left font-normal">Name</th>
+              <th className="px-4 py-2 text-left font-normal">Stock</th>
+              <th className="px-4 py-2 text-left font-normal">Category</th>
+              <th className="px-4 py-2 text-left font-normal">Description</th>
+              {/* kolom action */}
+              <th className="px-4 py-2 w-24" />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {loading && (
+              <tr className="bg-[#0A0A0A] border-t border-[#666666]">
+                <td className="px-4 py-3" colSpan={5}>
+                  Loading...
+                </td>
+              </tr>
+            )}
+
+            {!loading &&
+              products.map((product) => (
+                <tr
+                  key={product.id}
+                  className="bg-[#0A0A0A] border-t border-[#666666]"
+                >
+                  <td className="px-4 py-3 align-top">{product.name}</td>
+                  <td className="px-4 py-3 align-top">{product.stock}</td>
+                  <td className="px-4 py-3 align-top">
+                    {product.category?.name ??
+                      categories.find((c) => c.id === product.categoryId)
+                        ?.name ??
+                      "-"}
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    {product.description || "-"}
+                  </td>
+                  <td className="px-4 py-3 align-top text-right">
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(product)}
+                      className="mr-3 text-xs text-orange-400 hover:text-orange-300"
+                      title="Edit"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openDeleteConfirm(product)}
+                      className="text-xs text-red-500 hover:text-red-400"
+                      title="Delete"
+                    >
+                      🗑️
+                    </button>
+                  </td>
+                </tr>
+              ))}
+
+            {!loading && products.length === 0 && (
+              <tr className="bg-[#0A0A0A] border-t border-[#666666]">
+                <td className="px-4 py-3" colSpan={5}>
+                  No products yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Create / Update modal */}
+      <ProductFormModalTemplate
+        open={formOpen}
+        mode={formMode}
+        name={name}
+        stock={stock}
+        description={description}
+        categoryId={categoryId}
+        categories={categories}
+        onNameChange={setName}
+        onStockChange={setStock}
+        onDescriptionChange={setDescription}
+        onCategoryChange={setCategoryId}
+        onCancel={() => setFormOpen(false)}
+        onSubmit={handleFormSubmit}
+      />
+
+      {/* Delete confirm modal (pakai template yg sama dengan categories) */}
+      <ConfirmDeleteModalTemplate
+        open={deleteOpen}
+        categoryName={deleteProduct?.name ?? ""}
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={handleDeleteConfirm}
+      />
     </div>
   );
 }
